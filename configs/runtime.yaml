@@ -1,0 +1,18 @@
+source:
+  type: "file" # webcam, file, rtsp
+  path_or_index: "test_video.mp4"
+
+target_resolution: [640, 480]
+target_fps: 30.0
+
+recording:
+  enabled: true
+  directory: "recordings"
+  segment_length_minutes: 5.0
+
+streaming:
+  enabled: true
+  mode: "mjpeg"
+  host: "0.0.0.0"
+  port: 8080
+  protocol: "tcp"

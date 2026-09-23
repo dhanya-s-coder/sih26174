@@ -1,0 +1,35 @@
+name: "Smart India Hackathon BAS Experiment"
+version: "1.0.0"
+steps:
+  - id: "step_001"
+    name: "Open Main Box"
+    instruction: "Open the main box."
+    position: 1
+    required_predicates:
+      - type: "hand_touches"
+        args: ["main_box"]
+      - type: "object_state"
+        args: ["main_box", "open"]
+    expected_outcome: "Main box is opened."
+
+  - id: "step_002"
+    name: "Place Yellow Box Left"
+    instruction: "Take out the yellow box and place it on the left side."
+    position: 2
+    required_predicates:
+      - type: "hand_touches"
+        args: ["yellow_box"]
+      - type: "object_position"
+        args: ["yellow_box", "left_side"]
+    expected_outcome: "Yellow box is placed on the left side."
+
+  - id: "step_003"
+    name: "Place Red Box Right"
+    instruction: "Take out the red box and place it on the right side."
+    position: 3
+    required_predicates:
+      - type: "hand_touches"
+        args: ["red_box"]
+      - type: "object_position"
+        args: ["red_box", "right_side"]
+    expected_outcome: "Red box is placed on the right side."

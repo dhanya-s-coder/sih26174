@@ -1,0 +1,13 @@
+classes:
+  - id: 0
+    name: "main_box_closed"
+    notes: "The main payload box in a closed state."
+  - id: 1
+    name: "main_box_open"
+    notes: "The main payload box in an open state."
+  - id: 2
+    name: "yellow_box"
+    notes: "The yellow internal sample box."
+  - id: 3
+    name: "red_box"
+    notes: "The red internal sample box."

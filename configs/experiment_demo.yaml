@@ -1,0 +1,30 @@
+name: "HAR Color Box Demo"
+version: "1.0.0"
+steps:
+  - id: "step_demo_1"
+    name: "Touch Red Box"
+    instruction: "Pick up the red box."
+    position: 1
+    required_predicates:
+      - type: "hand_touches"
+        args: ["red_box"]
+    expected_outcome: "Red box picked up."
+
+  - id: "step_demo_2"
+    name: "Touch Yellow Box"
+    instruction: "Pick up the yellow box."
+    position: 2
+    required_predicates:
+      - type: "hand_touches"
+        args: ["yellow_box"]
+    expected_outcome: "Yellow box picked up."
+
+  - id: "step_demo_3"
+    name: "Hold Red Box"
+    instruction: "Hold the red box for 1.5 seconds."
+    position: 3
+    min_duration: 1.5
+    required_predicates:
+      - type: "hand_holds"
+        args: ["red_box"]
+    expected_outcome: "Red box held for 1.5 seconds."
