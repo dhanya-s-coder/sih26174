@@ -100,7 +100,13 @@ def main():
         payload = event.payload
         action = f"{payload['verb'].upper()}_{payload['object'].upper()}"
         interaction_key = (payload["verb"], payload["object"])
-        if interaction_key == last_dashboard_interaction and payload["verb"] == "holds":
+        if payload["verb"] == "holds":
+            if payload["object"] in dashboard_hold_objects:
+                return
+            dashboard_hold_objects.add(payload["object"])
+        elif payload["verb"] == "releases":
+            dashboard_hold_objects.discard(payload["object"])
+        if interaction_key == last_dashboard_interaction and payload["verb"] != "releases":
             return
         last_dashboard_interaction = interaction_key
         verb_labels = {
@@ -163,6 +169,7 @@ def main():
 
     first_frame_logged = False
     last_dashboard_interaction = None
+    dashboard_hold_objects = set()
     last_dashboard_step_idx = tracker.current_step_idx
     last_dashboard_completed = set(tracker.completed_steps)
     try:
