@@ -112,3 +112,13 @@ class SimpleStepTracker:
             confidence=1.0
         )
         self.log_writer.write_record(record)
+        self.bus.publish(Event(
+            event_type="step_result",
+            timestamp=video_ts,
+            payload={
+                "step_id": step.id,
+                "step_name": step.name,
+                "status": status.value,
+                "outcome": outcome,
+            },
+        ))

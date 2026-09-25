@@ -69,14 +69,32 @@ class OpenCVSource(FrameSource):
 
     def _open(self):
         import os
-        if os.name == 'nt' and isinstance(self.source_id, int):
-            # Prefer DSHOW on Windows for webcams
-            self.cap = cv2.VideoCapture(self.source_id, cv2.CAP_DSHOW)
-            if not self.cap.isOpened():
-                self.cap = cv2.VideoCapture(self.source_id, cv2.CAP_MSMF)
+        if isinstance(self.source_id, int):
+            # Try default backend first
+            self.cap = cv2.VideoCapture(self.source_id)
+            if not self.cap or not self.cap.isOpened():
+                if os.name == 'nt':
+                    self.cap = cv2.VideoCapture(self.source_id, cv2.CAP_DSHOW)
+                if (not self.cap or not self.cap.isOpened()) and os.name == 'nt':
+                    self.cap = cv2.VideoCapture(self.source_id, cv2.CAP_MSMF)
+            
+            # If camera index 0 failed, try scanning index 1 or 2
+            if (not self.cap or not self.cap.isOpened()) and self.source_id == 0:
+                logger.warning("Camera index 0 failed to open. Trying camera index 1...")
+                for idx in [1, 2]:
+                    self.cap = cv2.VideoCapture(idx)
+                    if self.cap and self.cap.isOpened():
+                        logger.info(f"Opened alternative camera index {idx}")
+                        break
         else:
             self.cap = cv2.VideoCapture(self.source_id)
-        return self.cap.isOpened()
+
+        opened = self.cap.isOpened() if self.cap else False
+        if opened:
+            logger.info(f"Successfully opened source {self.name} ({self.source_id})")
+        else:
+            logger.error(f"Could not open camera/video source {self.name} ({self.source_id})")
+        return opened
 
     def _run(self):
         while self.running:
