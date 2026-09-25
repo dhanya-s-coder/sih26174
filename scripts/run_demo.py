@@ -71,8 +71,8 @@ def main():
     # State for UI
     active_alert = None
     object_tracks = {
-        "yellow_box": {"inside": False, "removed": False, "last_center": None, "stable_frames": 0, "placed": False, "hand_contact": False},
-        "red_box": {"inside": False, "removed": False, "last_center": None, "stable_frames": 0, "placed": False, "hand_contact": False},
+        "yellow_box": {"inside": False, "removed": False, "removal_frames": 0, "hand_seen": False, "last_center": None, "stable_frames": 0, "placed": False, "hand_contact": False},
+        "red_box": {"inside": False, "removed": False, "removal_frames": 0, "hand_seen": False, "last_center": None, "stable_frames": 0, "placed": False, "hand_contact": False},
     }
     def alert_handler(e):
         nonlocal active_alert
@@ -130,8 +130,19 @@ def main():
                     track = object_tracks[obj.label]
                     cx = (obj.bbox[0] + obj.bbox[2]) / 2.0
                     cy = (obj.bbox[1] + obj.bbox[3]) / 2.0
+                    # A hand usually grips the top/edge of a box, so its
+                    # bounding-box center will not be inside the hand box.
+                    # Treat contact as true when either hand bbox overlaps
+                    # the object bbox or a hand landmark lies in the object.
+                    def overlaps(a, b):
+                        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+                        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+                        return ix2 > ix1 and iy2 > iy1
+
                     hand_contact = any(
-                        h.bbox[0] <= cx <= h.bbox[2] and h.bbox[1] <= cy <= h.bbox[3]
+                        overlaps(h.bbox, obj.bbox) or
+                        any(obj.bbox[0] <= lm[0] <= obj.bbox[2] and obj.bbox[1] <= lm[1] <= obj.bbox[3]
+                            for lm in h.landmarks)
                         for h in hands
                     )
                     track["hand_contact"] = hand_contact
@@ -145,7 +156,18 @@ def main():
                     # so they do not need to be detected while inside it.
                     # The first valid observation can be outside the box when
                     # the hand lifts the object into view.
-                    if hand_contact and not inside and not track["removed"]:
+                    if hand_contact:
+                        track["hand_seen"] = True
+
+                    if not inside and not track["removed"]:
+                        track["removal_frames"] += 1
+                    else:
+                        track["removal_frames"] = 0
+
+                    # Require the same confirmation window for both colors;
+                    # this prevents a box from being marked removed on the
+                    # first frame in which it briefly appears outside.
+                    if track["removal_frames"] >= 5 and track["hand_seen"] and not track["removed"]:
                         track["removed"] = True
                         bus.publish(Event(
                             event_type="interaction", timestamp=frame.video_timestamp,

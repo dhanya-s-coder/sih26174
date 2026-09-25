@@ -26,16 +26,15 @@ yellow_box:
   - 255
 
 main_box:
-  # Use a bright blue/cyan border or tape on the physical main box.
-  # This is more reliable than detecting plain white against a room background.
+  # White main box. It must contrast with the background.
   lower:
-  - 95
-  - 120
-  - 70
+  - 0
+  - 0
+  - 170
   upper:
-  - 135
+  - 180
+  - 65
   - 255
-  - 255
-  min_area: 5000
-  min_frame_ratio: 0.08
+  min_area: 2000
+  min_frame_ratio: 0.02
   max_frame_ratio: 0.75
