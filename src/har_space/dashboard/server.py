@@ -27,9 +27,11 @@ class AstroHARState:
         self.source_mode = "live"
         
         self.steps = [
-            {"id": "step_demo_1", "name": "Touch Red Box", "instruction": "Pick up the red box.", "object": "Red Box", "action": "TOUCH_RED_BOX"},
-            {"id": "step_demo_2", "name": "Touch Yellow Box", "instruction": "Pick up the yellow box.", "object": "Yellow Box", "action": "TOUCH_YELLOW_BOX"},
-            {"id": "step_demo_3", "name": "Hold Red Box", "instruction": "Hold the red box for 1.5 seconds.", "object": "Red Box", "action": "HOLD_RED_BOX"}
+            {"id": "step_001", "name": "Main Box Present", "instruction": "The main box is ready. Take out the yellow box.", "object": "Main Box", "action": "OBJECT_PRESENT_MAIN_BOX"},
+            {"id": "step_002", "name": "Take Out Yellow Box", "instruction": "Take the yellow box out of the main box.", "object": "Yellow Box", "action": "OBJECT_REMOVED_YELLOW_BOX"},
+            {"id": "step_003", "name": "Place Yellow Box Left", "instruction": "Place the yellow box on the left.", "object": "Yellow Box", "action": "OBJECT_PLACED_YELLOW_LEFT"},
+            {"id": "step_004", "name": "Take Out Red Box", "instruction": "Take the red box out of the main box.", "object": "Red Box", "action": "OBJECT_REMOVED_RED_BOX"},
+            {"id": "step_005", "name": "Place Red Box Right", "instruction": "Place the red box on the right.", "object": "Red Box", "action": "OBJECT_PLACED_RED_RIGHT"}
         ]
         
         self.action_probs = {}
@@ -39,6 +41,7 @@ class AstroHARState:
         self.voice_text = "Waiting for an instruction."
         self.latest_frame = None
         self.logs = []
+        self.pending_command = None
 
     def get_dict(self):
         with self.lock:
@@ -77,6 +80,20 @@ class AstroHARState:
     def configure_source(self, source_mode):
         with self.lock:
             self.source_mode = source_mode
+
+    def request_source(self, source):
+        with self.lock:
+            self.pending_command = {"action": "source", "source": source}
+
+    def request_quit(self):
+        with self.lock:
+            self.pending_command = {"action": "quit"}
+
+    def consume_command(self):
+        with self.lock:
+            command = self.pending_command
+            self.pending_command = None
+            return command
 
     def update_live_data(self, frame_img=None, current_step_idx=None, fps=None,
                          detections=None, completed_steps=None,
@@ -129,6 +146,29 @@ class DashboardHTTPHandler(BaseHTTPRequestHandler):
             self.serve_mjpeg_stream()
         else:
             self.send_error(404, "File Not Found")
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/control":
+            self.send_error(404, "Not Found")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            action = payload.get("action")
+            if action == "webcam":
+                global_state.request_source("webcam")
+            elif action == "recording":
+                global_state.request_source("recording")
+            elif action == "recording2":
+                global_state.request_source("recording2")
+            elif action == "quit":
+                global_state.request_quit()
+            else:
+                self.send_error(400, "Unknown action")
+                return
+            self.send_json({"ok": True, "action": action})
+        except Exception as exc:
+            self.send_error(400, str(exc))
 
     def serve_file(self, filepath: Path, content_type: str):
         if not filepath.exists():

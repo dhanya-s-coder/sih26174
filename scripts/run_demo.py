@@ -7,7 +7,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from src.har_space.config.runtime import RuntimeConfig
 from src.har_space.config.models import ExperimentSpec
-from src.har_space.io.source import WebcamSource, RTSPSource
+from src.har_space.io.source import WebcamSource, FileSource, RTSPSource
 from src.har_space.io.recorder import LocalRecorder
 from src.har_space.io.streamer import VideoStreamer
 from src.har_space.io.models import Frame
@@ -59,18 +59,32 @@ def main():
     
     log_writer = StructuredLogWriter(str(run_dir / "steps.jsonl"))
     
-    if args.source.isdigit():
-        source = WebcamSource(int(args.source))
-        global_state.configure_source("live")
-    elif args.source.startswith("rtsp"):
-        source = RTSPSource(args.source)
-        global_state.configure_source("live")
-    else:
-        parser.error("Only live input is supported. Use a webcam index such as 0 or an RTSP URL.")
+    def make_source(source_name):
+        if source_name == "webcam":
+            global_state.configure_source("live")
+            return WebcamSource(0)
+        if source_name == "recording":
+            global_state.configure_source("replay")
+            return FileSource("data/raw/experiment.mp4", realtime_pacing=True, loop=False)
+        if source_name == "recording2":
+            global_state.configure_source("replay")
+            return FileSource("data/raw/exp_final.mp4", realtime_pacing=True, loop=False)
+        if source_name.isdigit():
+            global_state.configure_source("live")
+            return WebcamSource(int(source_name))
+        if source_name.startswith("rtsp"):
+            global_state.configure_source("live")
+            return RTSPSource(source_name)
+        global_state.configure_source("replay")
+        return FileSource(source_name, realtime_pacing=True, loop=False)
+
+    source = make_source(args.source)
 
     streamer = None
     if args.stream:
-        streamer = VideoStreamer("mjpeg", "0.0.0.0", 8080)
+        # Keep the dashboard and raw MJPEG stream on separate ports.
+        stream_port = 8081 if args.dashboard else 8080
+        streamer = VideoStreamer("mjpeg", "0.0.0.0", stream_port)
         
     annotated_recorder = None
     if args.save_annotated:
@@ -179,11 +193,26 @@ def main():
     last_dashboard_completed = set(tracker.completed_steps)
     try:
         while True:
+            command = global_state.consume_command() if args.dashboard else None
+            if command:
+                if command["action"] == "quit":
+                    break
+                if command["action"] == "source":
+                    source.stop()
+                    source = make_source(command["source"])
+                    source.start()
+                    tracker.current_step_idx = 0
+                    tracker.completed_steps.clear()
+                    tracker.active_predicates.clear()
+                    extractor.contact_state.clear()
+                    for state in object_tracks.values():
+                        state.update({"inside": False, "removed": False, "removal_frames": 0, "hand_seen": False, "last_center": None, "stable_frames": 0, "placed": False, "hand_contact": False})
+
             frame = source.get_frame(timeout=0.1)
             if not frame:
                 if not source.running:
-                    print("[AstroHAR] Warning: Camera source stopped or failed to grab frames.")
-                    break
+                    global_state.configure_source("idle")
+                    time.sleep(0.05)
                 continue
 
             if not first_frame_logged:
@@ -282,9 +311,12 @@ def main():
                             location = "right"
                         else:
                             location = None
-                        expected = "left" if obj.label == "yellow_box" else "right"
-                        if location == expected:
-                            track["placed"] = True
+                        # Publish whichever side was actually detected. The
+                        # FSM decides whether it is correct or out of order;
+                        # filtering wrong placements here would hide them.
+                        if location in {"left", "right"}:
+                            expected = "left" if obj.label == "yellow_box" else "right"
+                            track["placed"] = location == expected
                             bus.publish(Event(
                                 event_type="interaction", timestamp=frame.video_timestamp,
                                 payload={"subject": "object", "verb": "placed", "object": obj.label, "location": location}
@@ -331,7 +363,9 @@ def main():
             if streamer:
                 streamer.push(annotated_frame)
                 
-            if not args.headless:
+            # In dashboard mode the browser is the display. Do not open a
+            # second native OpenCV window unless dashboard mode is disabled.
+            if not args.headless and not args.dashboard:
                 cv2.imshow("Live Demo", annotated_img)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):

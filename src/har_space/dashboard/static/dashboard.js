@@ -76,11 +76,21 @@
 
   function renderUI() {
     if (!state.steps.length) return;
+    const complete = state.currentStepIdx >= state.steps.length;
     const cur = state.steps[Math.min(state.currentStepIdx, state.steps.length - 1)];
-    dom.stepBadge.textContent = `STEP ${state.currentStepIdx + 1} / ${state.steps.length}`;
-    dom.stepTitle.textContent = cur.instruction;
-    dom.targetObject.textContent = cur.name.replace('Pick ', '').replace('Place ', '').replace('Locate ', '');
+    dom.stepBadge.textContent = complete ? 'COMPLETE' : `STEP ${state.currentStepIdx + 1} / ${state.steps.length}`;
+    dom.stepTitle.textContent = complete ? 'Experiment complete.' : cur.instruction;
+    dom.targetObject.textContent = complete ? 'All steps completed' : cur.name.replace('Pick ', '').replace('Place ', '').replace('Locate ', '');
     dom.voiceText.textContent = state.voiceText ? `"${state.voiceText}"` : 'Waiting for an instruction.';
+
+    if (complete) {
+      dom.actionDetected.textContent = 'COMPLETE (100%)';
+      dom.actionDetected.className = 'metric-val text-green';
+      dom.warningBanner.classList.add('hidden');
+      renderTimeline();
+      renderLogs();
+      return;
+    }
 
     if (state.wrongAction) {
       dom.actionDetected.textContent = `${state.wrongAction} (89%)`;
@@ -101,8 +111,9 @@
   }
 
   function renderLiveState(data) {
-    dom.inputValue.textContent = 'Live camera';
-    dom.feedCaption.textContent = 'Live camera • AI overlay';
+    const sourceMode = data.source_mode || 'live';
+    dom.inputValue.textContent = sourceMode === 'replay' ? 'Recorded video' : (sourceMode === 'idle' ? 'Stopped' : 'Live camera');
+    dom.feedCaption.textContent = sourceMode === 'replay' ? 'Recorded video • AI overlay' : 'Live camera • AI overlay';
     dom.protocolStatus.textContent = `● Step ${Math.min(data.current_step_idx + 1, state.steps.length)}`;
     dom.elapsed.textContent = data.elapsed || '0 min 0 sec';
     const detections = data.detections || {};
@@ -162,6 +173,12 @@
   }
 
   function setupListeners() {
+    document.getElementById('btn-webcam')?.addEventListener('click', () => sendControl('webcam'));
+    document.getElementById('btn-recording')?.addEventListener('click', () => sendControl('recording'));
+    document.getElementById('btn-recording-2')?.addEventListener('click', () => sendControl('recording2'));
+    document.getElementById('btn-quit')?.addEventListener('click', () => {
+      if (confirm('Stop the camera/video pipeline?')) sendControl('quit');
+    });
     dom.btnExportLog.addEventListener('click', () => {
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.logs, null, 2));
       const a = document.createElement('a');
@@ -169,6 +186,14 @@
       a.download = `AstroHAR_Log_${Date.now()}.json`;
       a.click();
     });
+  }
+
+  function sendControl(action) {
+    fetch('/api/control', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action})
+    }).catch(() => {});
   }
 
   function startCanvasOverlay() {

@@ -23,7 +23,11 @@
         </div>
       </div>
 
-      <div class="header-controls">
+        <div class="header-controls">
+          <button class="btn btn-outline btn-sm" id="btn-webcam">Webcam</button>
+          <button class="btn btn-outline btn-sm" id="btn-recording">Recorded Video 1</button>
+          <button class="btn btn-outline btn-sm" id="btn-recording-2">Recorded Video 2</button>
+          <button class="btn btn-danger btn-sm" id="btn-quit">Quit</button>
         <div class="input-mode" aria-label="Input mode">
           <span class="mode-label">INPUT</span>
           <span class="mode-option active">LIVE CAMERA</span>
@@ -90,6 +94,17 @@
           </div>
         </div>
 
+        <!-- EVENT LOGS -->
+        <div class="card logs-card">
+          <div class="card-header">
+            <h3>Recent Activity</h3>
+            <button class="btn btn-outline btn-sm" id="btn-export-log">📥 Export Log</button>
+          </div>
+          <div class="log-list" id="log-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
       </div>
 
       <!-- RIGHT COLUMN: PROTOCOL TIMELINE & EVENT LOGS -->
@@ -132,17 +147,6 @@
             <span>Elapsed</span><b id="elapsed-val">0 min 0 sec</b>
             <span>Protocol</span><b>Smart India Hackathon BAS Experiment</b>
             <span>Input</span><b id="input-value">Waiting</b>
-          </div>
-        </div>
-
-        <!-- EVENT LOGS -->
-        <div class="card logs-card">
-          <div class="card-header">
-            <h3>Recent Activity</h3>
-            <button class="btn btn-outline btn-sm" id="btn-export-log">📥 Export Log</button>
-          </div>
-          <div class="log-list" id="log-list">
-            <!-- Populated dynamically -->
           </div>
         </div>
 

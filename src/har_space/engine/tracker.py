@@ -45,7 +45,47 @@ class SimpleStepTracker:
             self.active_predicates.discard(f"hand_touches({obj})")
             self.active_predicates.discard(f"hand_holds({obj})")
             return
-            
+
+        # Detect actions that belong to a later state before accepting them.
+        # Example: removing the red box while the FSM is still waiting for
+        # yellow, or placing yellow on the wrong side.
+        current_step = self.steps[self.current_step_idx]
+        current_requirements = {
+            f"{req.type}({','.join(req.args)})"
+            for req in current_step.required_predicates
+        }
+        future_requirements = {
+            f"{req.type}({','.join(req.args)})"
+            for step in self.steps[self.current_step_idx + 1:]
+            for req in step.required_predicates
+        }
+        wrong_location = (
+            subject == "object"
+            and verb == "placed"
+            and payload.get("location")
+            and pred not in current_requirements
+        )
+        if wrong_location:
+            expected_location = next(
+                (req.args[1] for req in current_step.required_predicates
+                 if req.type == "object_placed" and len(req.args) > 1),
+                "the required location",
+            )
+            self._fire_alert(
+                f"Wrong placement: {obj.replace('_', ' ').title()} must be placed on the {expected_location}.",
+                "warning",
+                event.timestamp,
+            )
+            return
+
+        if pred in future_requirements:
+            self._fire_alert(
+                f"Out of sequence: {verb.replace('_', ' ').title()} {obj.replace('_', ' ')}.",
+                "warning",
+                event.timestamp,
+            )
+            return
+
         if pred in self.active_predicates:
             return
             

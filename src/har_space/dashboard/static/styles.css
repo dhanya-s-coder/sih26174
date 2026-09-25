@@ -113,9 +113,13 @@ body {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 1.5rem;
+  align-items: start;
+  min-width: 0;
 }
 
-.col { display: flex; flex-direction: column; gap: 1.25rem; }
+.col { display: flex; flex-direction: column; gap: 1.25rem; min-height: 100%; }
+.col-left, .col-right { min-width: 0; }
+.col-right .card { width: 100%; box-sizing: border-box; }
 
 /* CARDS */
 .card {
@@ -171,7 +175,7 @@ body {
 
 .feed-caption { padding: 7px 14px; color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; border-top: 1px solid var(--border-color); }
 
-.mjpeg-img { width: 100%; height: 100%; object-fit: cover; }
+.mjpeg-img { width: 100%; height: 100%; object-fit: contain; background: #000; }
 .cv-canvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
 
 /* CURRENT STEP CARD */
@@ -301,6 +305,9 @@ body {
 .status-value { color: var(--color-green); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
 .session-grid { display: grid; grid-template-columns: auto 1fr; font-size: 12px; }
 .session-grid b { text-align: right; font-family: var(--font-mono); font-size: 11px; }
+.session-card { min-height: 100px; order: 4; }
+.logs-card { min-height: 160px; order: 5; }
+.col-left .current-step-card { flex: 0 1 auto; }
 
 /* BUTTONS */
 .btn {
