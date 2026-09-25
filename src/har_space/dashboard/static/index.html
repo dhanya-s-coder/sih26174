@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AstroHAR — Astronaut Activity Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+  
+  <div class="app-container">
+    
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-brand">
+        <span class="isro-badge">ISRO • SIH 26174</span>
+        <div>
+          <h1>AstroHAR</h1>
+          <p class="header-subtitle">Astronaut Hand Activity Recognition</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div class="input-mode" aria-label="Input mode">
+          <span class="mode-label">INPUT</span>
+          <span class="mode-option active">LIVE CAMERA</span>
+        </div>
+
+        <div class="status-pill online">
+          <span class="pulse-dot"></span> System Online
+        </div>
+        
+        <div class="clock" id="clock-display">14:32:10 UTC</div>
+      </div>
+    </header>
+
+    <!-- MAIN DASHBOARD CONTENT -->
+    <main class="dashboard-main">
+      
+      <!-- LEFT COLUMN: LIVE VIDEO FEED & CURRENT STEP -->
+      <div class="col col-left">
+        
+        <!-- LIVE CAMERA FEED -->
+        <div class="card video-card">
+          <div class="card-title-bar">
+            <span class="live-tag">● LIVE STREAM</span>
+            <span class="card-title">PAYLOAD CAMERA OVERLAY</span>
+          </div>
+          
+          <div class="video-box">
+            <img id="mjpeg-stream" class="mjpeg-img" src="/stream" alt="Live Feed Camera Stream" />
+          </div>
+          <div class="feed-caption" id="feed-caption">Waiting for camera frames...</div>
+        </div>
+
+        <!-- CURRENT STEP CARD -->
+        <div class="card current-step-card" id="current-step-card">
+          <div class="card-header">
+            <span class="step-badge" id="step-badge">STEP 3 / 7</span>
+            <h2 class="step-title" id="step-title">Pick the Red Box</h2>
+          </div>
+
+          <div class="step-metrics">
+            <div class="metric-item">
+              <span class="metric-label">Detected Action</span>
+              <span class="metric-val text-cyan" id="action-detected">PICK_RED (93%)</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Target Object</span>
+              <span class="metric-val" id="target-object">Red Box</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">FPS</span>
+              <span class="metric-val text-green" id="fps-val">29.8</span>
+            </div>
+          </div>
+
+          <div class="detection-strip">
+            <span class="metric-label">LIVE DETECTIONS</span>
+            <div id="detection-list" class="detection-list"><span class="muted">Waiting for detections...</span></div>
+          </div>
+
+          <!-- WARNING BANNER IF WRONG STEP -->
+          <div class="warning-banner hidden" id="warning-banner">
+            ⚠ <strong>INCORRECT ACTION DETECTED!</strong>
+            <div id="warning-text">Expected: PICK_RED | Detected: PICK_YELLOW</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: PROTOCOL TIMELINE & EVENT LOGS -->
+      <div class="col col-right">
+        
+        <!-- PROTOCOL TIMELINE -->
+        <div class="card timeline-card">
+          <div class="card-header">
+            <h3>Protocol Steps</h3>
+          </div>
+          <div class="step-list" id="step-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- VOICE INSTRUCTION -->
+        <div class="card voice-card">
+          <div class="card-header">
+            <h3>Voice Alert / Instruction</h3>
+          </div>
+          <div class="voice-box">
+            <p id="voice-text">"Please pick the red box and place it in the main box."</p>
+          </div>
+        </div>
+
+        <div class="card status-card">
+          <div class="card-header"><h3>System Status</h3><span class="text-green">ONLINE</span></div>
+          <div class="status-list">
+            <div><span>Camera / video input</span><b class="status-value">● Ready</b></div>
+            <div><span>Object detection</span><b class="status-value">● Running</b></div>
+            <div><span>Hand landmarks</span><b class="status-value">● Running</b></div>
+            <div><span>Protocol state</span><b class="status-value" id="protocol-status">● Step 1</b></div>
+            <div><span>Data logging</span><b class="status-value">● Active</b></div>
+          </div>
+        </div>
+
+        <div class="card session-card">
+          <div class="card-header"><h3>Session</h3></div>
+          <div class="session-grid">
+            <span>Elapsed</span><b id="elapsed-val">0 min 0 sec</b>
+            <span>Protocol</span><b>Smart India Hackathon BAS Experiment</b>
+            <span>Input</span><b id="input-value">Waiting</b>
+          </div>
+        </div>
+
+        <!-- EVENT LOGS -->
+        <div class="card logs-card">
+          <div class="card-header">
+            <h3>Recent Activity</h3>
+            <button class="btn btn-outline btn-sm" id="btn-export-log">📥 Export Log</button>
+          </div>
+          <div class="log-list" id="log-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
