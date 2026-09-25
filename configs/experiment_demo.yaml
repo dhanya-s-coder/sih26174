@@ -1,0 +1,47 @@
+name: "HAR Color Box Demo"
+version: "1.0.0"
+steps:
+  - id: "step_demo_1"
+    name: "Main Box Present"
+    instruction: "The main box is ready. Take out the yellow box."
+    position: 1
+    required_predicates:
+      - type: "object_present"
+        args: ["main_box"]
+    expected_outcome: "Main box is present."
+
+  - id: "step_demo_2"
+    name: "Take Out Yellow Box"
+    instruction: "Take the yellow box out of the main box."
+    position: 2
+    required_predicates:
+      - type: "object_removed"
+        args: ["yellow_box", "main_box"]
+    expected_outcome: "Yellow box removed from the main box."
+
+  - id: "step_demo_3"
+    name: "Place Yellow Box Left"
+    instruction: "Place the yellow box on the left."
+    position: 3
+    required_predicates:
+      - type: "object_placed"
+        args: ["yellow_box", "left"]
+    expected_outcome: "Yellow box placed on the left."
+
+  - id: "step_demo_4"
+    name: "Take Out Red Box"
+    instruction: "Take the red box out of the main box."
+    position: 4
+    required_predicates:
+      - type: "object_removed"
+        args: ["red_box", "main_box"]
+    expected_outcome: "Red box removed from the main box."
+
+  - id: "step_demo_5"
+    name: "Place Red Box Right"
+    instruction: "Place the red box on the right."
+    position: 5
+    required_predicates:
+      - type: "object_placed"
+        args: ["red_box", "right"]
+    expected_outcome: "Red box placed on the right."

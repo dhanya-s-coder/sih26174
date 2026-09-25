@@ -1,0 +1,41 @@
+red_box:
+  lower:
+  - 170
+  - 175
+  - 104
+  lower2:
+  - 0
+  - 140
+  - 100
+  upper:
+  - 180
+  - 255
+  - 255
+  upper2:
+  - 10
+  - 255
+  - 255
+yellow_box:
+  lower:
+  - 22
+  - 73
+  - 99
+  upper:
+  - 38
+  - 255
+  - 255
+
+main_box:
+  # Use a bright blue/cyan border or tape on the physical main box.
+  # This is more reliable than detecting plain white against a room background.
+  lower:
+  - 95
+  - 120
+  - 70
+  upper:
+  - 135
+  - 255
+  - 255
+  min_area: 5000
+  min_frame_ratio: 0.08
+  max_frame_ratio: 0.75
