@@ -1,7 +1,13 @@
 import time
+import json
+import sys
+import threading
+import types
+from pathlib import Path
 import pytest
 from src.har_space.config.models import ExperimentSpec, Predicate, ExperimentStep
 from src.har_space.events.bus import EventBus
+from src.har_space.alerts.voice import VoiceAlerter
 from src.har_space.engine.tracker import SimpleStepTracker
 from src.har_space.logging_.writer import StructuredLogWriter
 from src.har_space.data_models import Event, HandState, Detection
@@ -31,6 +37,8 @@ def tracker_setup(tmp_path, spec):
 
 def test_correct_sequence(tracker_setup):
     bus, tracker, writer = tracker_setup
+    alerts = []
+    bus.subscribe("alert", alerts.append)
     
     # Touch red box -> Step 1
     bus.publish(Event(event_type="interaction", timestamp=0.1, payload={"subject": "hand", "verb": "touches", "object": "red_box"}))
@@ -39,9 +47,115 @@ def test_correct_sequence(tracker_setup):
     # Touch yellow box -> Step 2
     bus.publish(Event(event_type="interaction", timestamp=0.2, payload={"subject": "hand", "verb": "touches", "object": "yellow_box"}))
     assert tracker.current_step_idx == 2
+    assert not [alert for alert in alerts if alert.payload["level"] in {"warning", "critical", "error"}]
+
+def test_each_configured_step_transition_emits_its_instruction(tmp_path, monkeypatch):
+    bus = EventBus()
+    spoken_events = []
+    bus.subscribe("speech", spoken_events.append)
+    experiment_path = Path(__file__).resolve().parents[1] / "configs" / "experiment_demo.yaml"
+    spec = ExperimentSpec.load_from_yaml(str(experiment_path))
+
+    engine_spoken = []
+    all_instructions_spoken = threading.Event()
+
+    class FakeEngine:
+        def say(self, text):
+            engine_spoken.append(text)
+
+        def runAndWait(self):
+            if len(engine_spoken) == len(spec.steps) + 1:
+                all_instructions_spoken.set()
+
+    fake_module = types.ModuleType("pyttsx3")
+    fake_module.init = lambda driver: FakeEngine()
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+    voice = VoiceAlerter(bus)
+    voice.start()
+    deadline = time.monotonic() + 2
+    while voice.status == "STARTING" and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert voice.status == "READY"
+
+    writer = StructuredLogWriter(str(tmp_path / "voice.jsonl"))
+    tracker = SimpleStepTracker(spec, bus, writer)
+    bus.publish(Event(event_type="speech", timestamp=0.0, payload={"text": spec.steps[0].instruction}))
+
+    def interaction(ts, verb, obj):
+        bus.publish(Event(event_type="interaction", timestamp=ts,
+                          payload={"subject": "hand", "verb": verb, "object": obj}))
+
+    timestamp = 0.1
+    for step in spec.steps:
+        for predicate in step.required_predicates:
+            interaction(timestamp, predicate.type.removeprefix("hand_"), predicate.args[0])
+            timestamp += 0.1
+            interaction(timestamp, "releases", predicate.args[0])
+            timestamp += 0.1
+
+    assert tracker.current_step_idx == len(spec.steps)
+    assert [event.payload["text"] for event in spoken_events] == [
+        *(step.instruction for step in spec.steps if step.instruction),
+        "Experiment complete.",
+    ]
+    expected_speech = [
+        *(step.instruction for step in spec.steps if step.instruction),
+        "Experiment complete.",
+    ]
+    assert all_instructions_spoken.wait(2)
+    voice.stop()
+    assert engine_spoken == expected_speech
+    assert [json.loads(line)["status"] for line in Path(writer.filepath).read_text().splitlines()] == [
+        "completed", "completed", "completed"
+    ]
+
+def test_voice_alerter_preserves_step_instructions_around_priority_alerts(monkeypatch):
+    spoken = []
+    all_spoken = threading.Event()
+
+    class FakeEngine:
+        def say(self, text):
+            spoken.append(text)
+            if len(spoken) == 3:
+                all_spoken.set()
+
+        def runAndWait(self):
+            return None
+
+    fake_module = types.ModuleType("pyttsx3")
+    fake_module.init = lambda driver: FakeEngine()
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake_module)
+
+    bus = EventBus()
+    voice = VoiceAlerter(bus)
+    voice.start()
+    deadline = time.monotonic() + 2
+    while voice.status == "STARTING" and time.monotonic() < deadline:
+        time.sleep(0.005)
+    bus.publish(Event(event_type="speech", timestamp=1.0, payload={"text": "Step two instruction."}))
+    bus.publish(Event(event_type="speech", timestamp=1.1,
+                      payload={"text": "Protocol alert.", "priority": True}))
+    bus.publish(Event(event_type="speech", timestamp=1.2, payload={"text": "Step three instruction."}))
+
+    assert all_spoken.wait(2)
+    voice.stop()
+    assert spoken == ["Step two instruction.", "Protocol alert.", "Step three instruction."]
+
+def test_reset_speech_discards_only_stale_queued_guidance():
+    voice = VoiceAlerter(EventBus())
+    voice.queue.put("Stale step instruction.")
+    voice.handle_speech_event(Event(
+        event_type="speech", timestamp=2.0,
+        payload={"text": "First step instruction.", "reset_queue": True},
+    ))
+
+    assert voice.queue.get_nowait() == "First step instruction."
+    assert voice.queue.empty()
 
 def test_skipped_step(tracker_setup):
     bus, tracker, writer = tracker_setup
+    alerts = []
+    bus.subscribe("alert", alerts.append)
     
     # Touch yellow box directly -> Skips Step 1
     bus.publish(Event(event_type="interaction", timestamp=0.1, payload={"subject": "hand", "verb": "touches", "object": "yellow_box"}))
@@ -51,6 +165,11 @@ def test_skipped_step(tracker_setup):
     assert len(writer.records) == 2
     assert writer.records[0].status == "skipped"
     assert writer.records[1].status == "completed"
+    warning = next(alert for alert in alerts if alert.payload["level"] == "warning")
+    assert "Step 1" in warning.payload["message"]
+    assert [json.loads(line)["status"] for line in Path(writer.filepath).read_text(encoding="utf-8").splitlines()] == [
+        "skipped", "completed"
+    ]
 
 def test_repeated_step_and_cooldown(tracker_setup):
     bus, tracker, writer = tracker_setup
@@ -77,6 +196,9 @@ def test_repeated_step_and_cooldown(tracker_setup):
     bus.publish(Event(event_type="interaction", timestamp=0.45, payload={"subject": "hand", "verb": "releases", "object": "red_box"}))
     bus.publish(Event(event_type="interaction", timestamp=0.5, payload={"subject": "hand", "verb": "touches", "object": "red_box"}))
     assert len(alerts_fired) == 2
+    assert [json.loads(line)["status"] for line in Path(writer.filepath).read_text(encoding="utf-8").splitlines()] == [
+        "completed", "out_of_sequence", "out_of_sequence"
+    ]
 
 def test_release_required(tracker_setup):
     bus, tracker, writer = tracker_setup

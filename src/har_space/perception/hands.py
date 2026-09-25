@@ -1,4 +1,3 @@
-import sys
 import os
 import cv2
 import numpy as np
@@ -19,10 +18,7 @@ class HandLandmarker:
             raise ImportError("mediapipe is not installed.")
             
         if not os.path.exists(model_path):
-            print("ERROR: MediaPipe Hand Landmarker model not found!")
-            print(f"Expected at: {model_path}")
-            print("Download it from: https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task")
-            sys.exit(1)
+            raise FileNotFoundError(f"MediaPipe Hand Landmarker model not found at {model_path}")
             
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.HandLandmarkerOptions(

@@ -18,6 +18,7 @@ def test_file_source(tmp_path):
     out.release()
     
     source = FileSource(vid_path, realtime_pacing=False, loop=False)
+    assert source.status == "STOPPED"
     source.start()
     
     frames_received = 0
@@ -34,7 +35,7 @@ def test_file_source(tmp_path):
 
 def test_recorder(tmp_path):
     output_dir = tmp_path / "records"
-    recorder = LocalRecorder(str(output_dir), segment_length_minutes=0.1)
+    recorder = LocalRecorder(str(output_dir), segment_length_minutes=0.1, min_disk_space_mb=0)
     recorder.start(fps=30, resolution=(100, 100))
     
     for i in range(5):
@@ -58,6 +59,8 @@ def test_recorder(tmp_path):
 def test_mjpeg_streamer():
     streamer = VideoStreamer("mjpeg", "127.0.0.1", 8081)
     streamer.start()
+    assert streamer.status == "LISTENING"
+    assert streamer.endpoint == "http://127.0.0.1:8081/"
     
     # Push a test frame
     frame = Frame(
@@ -75,5 +78,7 @@ def test_mjpeg_streamer():
         resp = requests.get("http://127.0.0.1:8081", stream=True, timeout=2)
         assert resp.status_code == 200
         assert b'multipart/x-mixed-replace' in resp.headers['Content-type'].encode()
+        assert 'boundary=jpgboundary' in resp.headers['Content-type']
     finally:
         streamer.stop()
+    assert streamer.status == "INACTIVE"

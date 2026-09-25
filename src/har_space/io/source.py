@@ -18,8 +18,21 @@ class FrameSource(ABC):
         self.frames_read = 0
         self.frames_dropped = 0
         self.start_time = 0.0
+        self.last_frame_time = 0.0
+        self.error_message = ""
+
+    @property
+    def status(self) -> str:
+        if self.error_message:
+            return "ERROR"
+        if self.running and self.last_frame_time and time.time() - self.last_frame_time <= 2.0:
+            return "ONLINE"
+        if self.running:
+            return "NO FRAME"
+        return "STOPPED"
 
     def start(self):
+        self.error_message = ""
         self.running = True
         self.start_time = time.time()
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -81,14 +94,27 @@ class OpenCVSource(FrameSource):
     def _run(self):
         while self.running:
             if not self.cap or not self.cap.isOpened():
-                if not self._open():
+                try:
+                    opened = self._open()
+                except Exception as exc:
+                    self.error_message = str(exc)
+                    logger.exception("Failed to open source %s", self.name)
+                    break
+                if not opened:
+                    self.error_message = f"Could not open source {self.source_id}"
                     if not self.auto_reconnect:
                         logger.error(f"Failed to open source {self.name}. Exiting.")
                         break
                     time.sleep(2.0)
                     continue
+                self.error_message = ""
 
-            ret, img = self.cap.read()
+            try:
+                ret, img = self.cap.read()
+            except Exception as exc:
+                self.error_message = str(exc)
+                logger.exception("Failed to read source %s", self.name)
+                break
             if not ret:
                 if self.loop:
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -118,6 +144,7 @@ class OpenCVSource(FrameSource):
             )
             self._push_frame(frame)
             self.frames_read += 1
+            self.last_frame_time = now
 
         self.running = False
         if self.cap:

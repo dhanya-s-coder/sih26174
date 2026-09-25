@@ -27,10 +27,23 @@ class LocalRecorder:
         self.segment_index = 0
         self.fps = 30.0
         self.resolution = (640, 480)
+        self.current_segment_path = ""
+        self.error_message = ""
+        self._recording_started = False
         
         os.makedirs(self.output_dir, exist_ok=True)
 
+    @property
+    def status(self) -> str:
+        if self.error_message:
+            return "ERROR"
+        if not self.running:
+            return "INACTIVE"
+        return "ACTIVE" if self._recording_started else "STARTING"
+
     def start(self, fps: float, resolution: tuple[int, int]):
+        self.error_message = ""
+        self._recording_started = False
         self.fps = fps
         self.resolution = resolution
         self.running = True
@@ -54,7 +67,8 @@ class LocalRecorder:
         total, used, free = shutil.disk_usage(self.output_dir)
         free_mb = free / (1024 * 1024)
         if free_mb < self.min_disk_space_mb:
-            logger.warning(f"Low disk space: {free_mb:.2f} MB left. Stopping recording.")
+            self.error_message = f"Low disk space: {free_mb:.2f} MB available"
+            logger.warning("%s. Stopping recording.", self.error_message)
             return False
         return True
 
@@ -66,13 +80,21 @@ class LocalRecorder:
             
         time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime(timestamp))
         base_name = os.path.join(self.output_dir, f"segment_{time_str}")
+        self.current_segment_path = f"{base_name}.mp4"
         
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        self.writer = cv2.VideoWriter(f"{base_name}.mp4", fourcc, self.fps, self.resolution)
+        self.writer = cv2.VideoWriter(self.current_segment_path, fourcc, self.fps, self.resolution)
+        if not self.writer.isOpened():
+            self.error_message = f"Could not open video output: {self.current_segment_path}"
+            logger.error(self.error_message)
+            self._close_current()
+            self.running = False
+            return
         
         self.csv_file = open(f"{base_name}.csv", 'w', newline='')
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(["frame_id", "wall_clock_timestamp", "video_timestamp"])
+        self._recording_started = True
         
         self.current_segment_start = timestamp
 
@@ -85,19 +107,26 @@ class LocalRecorder:
             self.csv_file = None
 
     def _run(self):
-        while self.running or not self.queue.empty():
-            try:
-                frame = self.queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
+        try:
+            while self.running or not self.queue.empty():
+                try:
+                    frame = self.queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
 
-            if self.writer is None or (frame.wall_clock_timestamp - self.current_segment_start) >= self.segment_length:
-                self._rotate_segment(frame.wall_clock_timestamp)
-                
-            if self.writer and self.running:
-                img_resized = cv2.resize(frame.image, self.resolution)
-                self.writer.write(img_resized)
-                if self.csv_writer:
-                    self.csv_writer.writerow([frame.frame_id, frame.wall_clock_timestamp, frame.video_timestamp])
+                if self.writer is None or (frame.wall_clock_timestamp - self.current_segment_start) >= self.segment_length:
+                    self._rotate_segment(frame.wall_clock_timestamp)
+                    if not self.running:
+                        break
 
-        self._close_current()
+                if self.writer and self.running:
+                    img_resized = cv2.resize(frame.image, self.resolution)
+                    self.writer.write(img_resized)
+                    if self.csv_writer:
+                        self.csv_writer.writerow([frame.frame_id, frame.wall_clock_timestamp, frame.video_timestamp])
+        except Exception as exc:
+            self.error_message = str(exc)
+            logger.exception("Recording failed")
+            self.running = False
+        finally:
+            self._close_current()

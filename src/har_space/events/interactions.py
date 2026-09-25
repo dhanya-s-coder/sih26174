@@ -13,6 +13,10 @@ class InteractionExtractor:
         # State: { (hand_idx, obj_label): {"frames": int, "active": bool, "start_time": float} }
         self.contact_state = {}
 
+    def reset(self) -> None:
+        """Clear temporal contact state after an experiment protocol reset."""
+        self.contact_state.clear()
+
     def process(self, hands: List[HandState], objects: List[Detection], video_ts: float):
         current_contacts = set()
         

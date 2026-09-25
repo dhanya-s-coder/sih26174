@@ -17,3 +17,6 @@ data/splits/*
 recordings/
 models/mediapipe/*.task
 .pytest_cache/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/*.tsbuildinfo

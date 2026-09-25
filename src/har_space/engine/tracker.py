@@ -42,8 +42,28 @@ class SimpleStepTracker:
             return
             
         self.active_predicates.add(pred)
+
+        repeated_step = next(
+            (
+                step for step in self.steps
+                if step.id in self.completed_steps
+                and any(f"{req.type}({req.args[0]})" == pred for req in step.required_predicates)
+            ),
+            None,
+        )
+        if repeated_step is not None:
+            self._fire_alert("Out of sequence! Step already completed.", "warning", event.timestamp)
+            self._log_record(repeated_step, StepStatus.out_of_sequence, event.timestamp, "Repeated")
+            return
         
         self._evaluate_steps(event.timestamp)
+
+    def reset(self) -> None:
+        """Reset only protocol state; the owning runtime calls this on its pipeline thread."""
+        self.current_step_idx = 0
+        self.last_alert_time = 0.0
+        self.completed_steps.clear()
+        self.active_predicates.clear()
 
     def _evaluate_steps(self, video_ts: float):
         # Check all steps to see if the current active predicates satisfy them
@@ -61,17 +81,14 @@ class SimpleStepTracker:
                     self._complete_step(idx, video_ts)
                 elif idx > self.current_step_idx:
                     # Skipped steps
+                    skipped_steps = self.steps[self.current_step_idx:idx]
                     for skipped_idx in range(self.current_step_idx, idx):
                         self._skip_step(skipped_idx, video_ts)
                     self._complete_step(idx, video_ts)
-                    self._fire_alert(f"Step skipped! You missed: {self.steps[self.current_step_idx-1].name}", "warning", video_ts)
-                elif idx < self.current_step_idx and step.id not in self.completed_steps:
-                    # Should not happen typically if we mark them skipped, but just in case
-                    pass
-                elif step.id in self.completed_steps:
-                    # Out of sequence (repeating a done step)
-                    self._fire_alert("Out of sequence! Step already completed.", "warning", video_ts)
-                    self._log_record(step, StepStatus.out_of_sequence, video_ts, "Repeated")
+                    missed = ", ".join(step.name for step in skipped_steps)
+                    self._fire_alert(f"Step skipped! You missed: {missed}", "warning", video_ts)
+                # Completed prior-step predicates may remain active until hand release.
+                # They are not new actions and must not produce false violations.
 
     def _complete_step(self, idx: int, video_ts: float):
         step = self.steps[idx]
@@ -83,10 +100,12 @@ class SimpleStepTracker:
         # Announce next step or completion
         if self.current_step_idx < len(self.steps):
             next_step = self.steps[self.current_step_idx]
-            self.bus.publish(Event(event_type="speech", timestamp=video_ts, payload={"text": next_step.instruction}))
+            if next_step.instruction and next_step.instruction.strip():
+                self.bus.publish(Event(event_type="speech", timestamp=video_ts, payload={"text": next_step.instruction}))
         else:
             self.bus.publish(Event(event_type="speech", timestamp=video_ts, payload={"text": "Experiment complete."}))
-            self._fire_alert("Experiment complete.", "info", video_ts)
+            completion_alert = Alert(message="Experiment complete.", level="info", timestamp=time.time())
+            self.bus.publish(Event(event_type="alert", timestamp=video_ts, payload=completion_alert.model_dump()))
 
     def _skip_step(self, idx: int, video_ts: float):
         step = self.steps[idx]

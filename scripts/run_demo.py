@@ -1,143 +1,137 @@
-import cv2
-import time
+"""Run the existing HAR pipeline with its local OpenCV experiment view."""
+
+from __future__ import annotations
+
 import argparse
+import logging
 from pathlib import Path
 import sys
+import time
+
+import cv2
+import numpy as np
 
 sys.path.append(str(Path(__file__).parent.parent))
-from src.har_space.config.runtime import RuntimeConfig
-from src.har_space.config.models import ExperimentSpec
-from src.har_space.io.source import WebcamSource, FileSource, RTSPSource
-from src.har_space.io.recorder import LocalRecorder
-from src.har_space.io.streamer import VideoStreamer
-from src.har_space.io.models import Frame
-from src.har_space.events.bus import EventBus
-from src.har_space.perception.color_detector import ColorBoxDetector
-from src.har_space.perception.hands import HandLandmarker
-from src.har_space.events.interactions import InteractionExtractor
-from src.har_space.engine.tracker import SimpleStepTracker
-from src.har_space.alerts.voice import VoiceAlerter
-from src.har_space.logging_.writer import StructuredLogWriter
+
+from src.har_space.api.runtime import HARApplication
 from src.har_space.gui.overlay import draw_overlay
-from src.har_space.data_models import Alert
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source", default="0")
+
+logger = logging.getLogger("har_demo")
+
+
+def _status_messages(app: HARApplication) -> list[str]:
+    messages = []
+    if app.source.error_message:
+        messages.append(f"Camera/video error: {app.source.error_message}")
+    elif not app.source.running:
+        messages.append("Camera/video source stopped or reached end of file.")
+
+    if app.detector is None:
+        messages.append(f"Color detection error: {app.detector_error}")
+    if app.hand_landmarker is None:
+        messages.append(f"Hand detection unavailable: {app.hand_error}")
+    if app.voice.status == "ERROR":
+        messages.append(f"Voice error: {app.voice.error_message}")
+    if app.pipeline_error:
+        messages.append(f"Pipeline error: {app.pipeline_error}")
+    return messages
+
+
+def _report_headless_errors(app: HARApplication, reported: set[str]) -> None:
+    errors = []
+    if app.source.error_message:
+        errors.append(f"Camera/video error: {app.source.error_message}")
+    if app.detector is None:
+        errors.append(f"Color detection error: {app.detector_error}")
+    if app.hand_landmarker is None:
+        errors.append(f"Hand detection unavailable: {app.hand_error}")
+    if app.voice.status == "ERROR":
+        errors.append(f"Voice error: {app.voice.error_message}")
+    if app.pipeline_error:
+        errors.append(f"Pipeline error: {app.pipeline_error}")
+    for error in errors:
+        if error not in reported:
+            logger.error(error)
+            reported.add(error)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the SIH26174 HAR OpenCV demo")
+    parser.add_argument("--source", default="0", help="Webcam index, video path, or RTSP URL")
     parser.add_argument("--experiment", default="configs/experiment_demo.yaml")
-    parser.add_argument("--mute", action="store_true")
-    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--mute", action="store_true", help="Disable speech output")
     parser.add_argument("--save-annotated", action="store_true")
-    parser.add_argument("--stream", action="store_true")
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Run without an OpenCV window and exit when a file source ends",
+    )
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    # Init Run Dir
-    run_dir = Path("runs") / time.strftime("%Y%m%d_%H%M%S")
-    run_dir.mkdir(parents=True, exist_ok=True)
-    
-    spec = ExperimentSpec.load_from_yaml(args.experiment)
-    bus = EventBus()
-    
-    log_writer = StructuredLogWriter(str(run_dir / "steps.jsonl"))
-    
-    if args.source.isdigit():
-        source = WebcamSource(int(args.source))
-    elif args.source.startswith("rtsp"):
-        source = RTSPSource(args.source)
-    else:
-        source = FileSource(args.source, realtime_pacing=True, loop=False)
-
-    streamer = None
-    if args.stream:
-        streamer = VideoStreamer("mjpeg", "0.0.0.0", 8080)
-        
-    annotated_recorder = None
-    if args.save_annotated:
-        annotated_recorder = LocalRecorder(str(run_dir), segment_length_minutes=60)
-
-    # Core Components
-    color_det = ColorBoxDetector()
-    try:
-        hand_lm = HandLandmarker()
-    except Exception as e:
-        print(e)
-        return
-        
-    extractor = InteractionExtractor(bus)
-    tracker = SimpleStepTracker(spec, bus, log_writer)
-    voice = VoiceAlerter(bus, mute=args.mute)
-    
-    # State for UI
-    active_alert = None
-    def alert_handler(e):
-        nonlocal active_alert
-        active_alert = Alert(**e.payload)
-    bus.subscribe("alert", alert_handler)
-    
-    # Start
-    source.start()
-    voice.start()
-    if streamer: streamer.start()
-    if annotated_recorder: annotated_recorder.start(30.0, (640, 480))
-    
-    # Initial voice
-    bus.publish(type("Event", (), {"event_type": "speech", "payload": {"text": spec.steps[0].instruction}})())
-
-    print(f"Run started in {run_dir}. Press Q to quit, R to reset.")
+    app = HARApplication(
+        source_arg=args.source,
+        experiment_path=args.experiment,
+        mute=args.mute,
+        save_annotated=args.save_annotated,
+    )
+    window_name = "SIH26174 - HAR Experiment"
+    reported_errors: set[str] = set()
 
     try:
+        app.start()
+        if not args.headless:
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
         while True:
-            frame = source.get_frame(timeout=0.1)
-            if not frame:
-                if not source.running:
-                    break
-                continue
-                
-            fps, _ = source.get_stats()
-            
-            # Perception
-            objects = color_det.process(frame.image)
-            hands = hand_lm.process(frame.image)
-            
-            # Interactions
-            extractor.process(hands, objects, frame.video_timestamp)
-            
-            # Overlay
-            annotated_img = draw_overlay(frame.image.copy(), objects, hands, spec, 
-                                         tracker.current_step_idx, tracker.completed_steps,
-                                         active_alert, fps)
-                                         
-            annotated_frame = Frame(frame_id=frame.frame_id, 
-                                    wall_clock_timestamp=frame.wall_clock_timestamp,
-                                    video_timestamp=frame.video_timestamp,
-                                    image=annotated_img, source_name="annotated")
-                                    
-            if annotated_recorder:
-                annotated_recorder.push(annotated_frame)
-            if streamer:
-                streamer.push(annotated_frame)
-                
-            if not args.headless:
-                cv2.imshow("Live Demo", annotated_img)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    break
-                elif key == ord('r'):
-                    print("Resetting tracker...")
-                    tracker.current_step_idx = 0
-                    tracker.completed_steps.clear()
-                    active_alert = None
+            if args.headless:
+                _report_headless_errors(app, reported_errors)
+            snapshot = app.runtime.snapshot()
+            image = snapshot.frame.copy() if snapshot.frame is not None else np.zeros((480, 640, 3), dtype=np.uint8)
+            instruction = (
+                app.spec.steps[snapshot.step_index].instruction
+                if snapshot.step_index < len(app.spec.steps)
+                else "Experiment complete."
+            )
+            view = draw_overlay(
+                image,
+                list(snapshot.detections),
+                list(snapshot.hands),
+                app.spec,
+                snapshot.step_index,
+                set(snapshot.completed_step_ids),
+                active_alert=snapshot.latest_alert,
+                show_telemetry=True,
+                interaction_text=snapshot.current_interaction,
+                current_instruction=instruction,
+                status_messages=_status_messages(app),
+                step_statuses=snapshot.step_statuses,
+            )
 
+            if args.headless:
+                pipeline_thread = app.pipeline_thread
+                if not app.source.running and (pipeline_thread is None or not pipeline_thread.is_alive()):
+                    break
+                time.sleep(0.02)
+                continue
+
+            cv2.imshow(window_name, view)
+            key = cv2.waitKey(20) & 0xFF
+            if key in (ord("q"), 27):
+                break
+            if key == ord("r"):
+                if not app.reset_experiment():
+                    logger.warning("Reset was not applied; the frame-processing pipeline is not running.")
     except KeyboardInterrupt:
-        pass
+        logger.info("Stopping the HAR demo.")
+    except Exception:
+        logger.exception("HAR demo failed")
+        raise
     finally:
-        print("Shutting down...")
-        source.stop()
-        voice.stop()
-        if streamer: streamer.stop()
-        if annotated_recorder: annotated_recorder.stop()
-        log_writer.write_summary(str(run_dir / "summary.json"))
-        cv2.destroyAllWindows()
+        app.stop()
+        if not args.headless:
+            cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
