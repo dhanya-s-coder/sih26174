@@ -44,7 +44,6 @@ class VoiceAlerter:
     def _run(self):
         try:
             import pyttsx3
-            engine = pyttsx3.init('sapi5')
         except Exception as e:
             logger.warning(f"Failed to initialize pyttsx3: {e}. Voice alerts disabled.")
             return
@@ -53,13 +52,30 @@ class VoiceAlerter:
             text = self.queue.get()
             if text is None:
                 break
-                
+
+            if not text:
+                continue
+
+            engine = None
             try:
+                # Recreate the SAPI engine for each utterance. On Windows, a
+                # long-lived pyttsx3 engine can stop consuming later messages.
+                engine = pyttsx3.init('sapi5')
                 engine.say(text)
                 engine.runAndWait()
             except Exception as e:
-                logger.warning(f"TTS error: {e}. Reinitializing...")
+                logger.warning(f"TTS error: {e}. Retrying instruction...")
                 try:
+                    if engine is not None:
+                        engine.stop()
                     engine = pyttsx3.init('sapi5')
-                except:
-                    pass
+                    engine.say(text)
+                    engine.runAndWait()
+                except Exception as retry_error:
+                    logger.warning(f"TTS retry failed: {retry_error}")
+            finally:
+                if engine is not None:
+                    try:
+                        engine.stop()
+                    except Exception:
+                        pass
