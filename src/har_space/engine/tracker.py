@@ -14,6 +14,7 @@ class SimpleStepTracker:
         
         self.steps = spec.steps
         self.current_step_idx = 0
+        self.step_started_at = time.monotonic()
         self.last_alert_time = 0.0
         self.completed_steps = set()
         
@@ -93,6 +94,19 @@ class SimpleStepTracker:
         
         self._evaluate_steps(event.timestamp)
 
+    def check_timeout(self, video_ts: float):
+        """Mark the current step failed when its configured timeout expires."""
+        if self.current_step_idx >= len(self.steps):
+            return
+        step = self.steps[self.current_step_idx]
+        if step.timeout is None:
+            return
+        if time.monotonic() - self.step_started_at < step.timeout:
+            return
+        self._log_record(step, StepStatus.failed, video_ts, "Step timed out")
+        self._fire_alert(f"Step timed out: {step.name}.", "warning", video_ts)
+        self.step_started_at = time.monotonic()
+
     def _evaluate_steps(self, video_ts: float):
         # Evaluate only the current FSM state. Repeated detections for a
         # completed state must not trigger false out-of-sequence alerts.
@@ -110,6 +124,7 @@ class SimpleStepTracker:
         step = self.steps[idx]
         self.completed_steps.add(step.id)
         self.current_step_idx = idx + 1
+        self.step_started_at = time.monotonic()
         
         self._log_record(step, StepStatus.completed, video_ts, step.expected_outcome)
         

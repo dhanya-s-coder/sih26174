@@ -324,6 +324,7 @@ def main():
 
             # Interactions
             extractor.process(hands, objects, frame.video_timestamp)
+            tracker.check_timeout(frame.video_timestamp)
 
             if tracker.current_step_idx != last_dashboard_step_idx:
                 dashboard_log(
